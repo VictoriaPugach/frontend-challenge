@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCats } from "./api/cats";
 
 type CatItem = {
@@ -7,6 +7,9 @@ type CatItem = {
 };
 
 const FAVORITES_STORAGE_KEY = "favorite-cat-ids";
+const INITIAL_CATS_BATCH_SIZE = 10;
+const NEXT_CATS_BATCH_SIZE = 10;
+const LOAD_MORE_OFFSET_PX = 480;
 
 type TabKey = "all" | "favorites";
 
@@ -34,39 +37,61 @@ export const App = () => {
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [allCats, setAllCats] = useState<CatItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<string[]>(readFavoriteIds);
   const favoriteIdsSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
+  const isRequestInFlightRef = useRef(false);
 
-  useEffect(() => {
-    const abortController = new AbortController();
+  const loadCatsBatch = useCallback(async (batchSize: number, isFirstLoad = false) => {
+    if (isRequestInFlightRef.current) {
+      return;
+    }
 
-    const loadCats = async () => {
+    isRequestInFlightRef.current = true;
+
+    if (isFirstLoad) {
       setIsLoading(true);
       setLoadError(null);
+    } else {
+      setIsLoadingMore(true);
+    }
 
-      try {
-        const loadedCats = await fetchCats(15, abortController.signal);
-        setAllCats(loadedCats.map((cat) => ({ id: cat.id, imageUrl: cat.url })));
-      } catch (error) {
-        if (abortController.signal.aborted) {
-          return;
+    try {
+      const loadedCats = await fetchCats(batchSize);
+      const mappedCats = loadedCats.map((cat) => ({ id: cat.id, imageUrl: cat.url }));
+
+      setAllCats((currentCats) => {
+        if (mappedCats.length === 0) {
+          return currentCats;
         }
 
-        setLoadError(error instanceof Error ? error.message : "Ошибка загрузки");
-      } finally {
-        if (!abortController.signal.aborted) {
-          setIsLoading(false);
-        }
+        const existingIds = new Set(currentCats.map((cat) => cat.id));
+        const uniqueIncoming = mappedCats.filter((cat) => !existingIds.has(cat.id));
+
+        return uniqueIncoming.length > 0 ? [...currentCats, ...uniqueIncoming] : currentCats;
+      });
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Ошибка загрузки");
+    } finally {
+      if (isFirstLoad) {
+        setIsLoading(false);
+      } else {
+        setIsLoadingMore(false);
       }
-    };
 
-    void loadCats();
-
-    return () => {
-      abortController.abort();
-    };
+      isRequestInFlightRef.current = false;
+    }
   }, []);
+
+  useEffect(() => {
+    const startLoading = async () => {
+      await loadCatsBatch(INITIAL_CATS_BATCH_SIZE, true);
+      void loadCatsBatch(NEXT_CATS_BATCH_SIZE);
+    };
+
+    void startLoading();
+  }, [loadCatsBatch]);
 
   useEffect(() => {
     localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favoriteIds));
@@ -85,6 +110,41 @@ export const App = () => {
         : allCats.filter((cat) => favoriteIdsSet.has(cat.id)),
     [activeTab, allCats, favoriteIdsSet]
   );
+
+  useEffect(() => {
+    if (activeTab !== "all") {
+      return;
+    }
+
+    const handleScroll = () => {
+      const viewportBottom = window.innerHeight + window.scrollY;
+      const pageBottom = document.documentElement.scrollHeight;
+      const isNearBottom = viewportBottom >= pageBottom - LOAD_MORE_OFFSET_PX;
+
+      if (isNearBottom) {
+        void loadCatsBatch(NEXT_CATS_BATCH_SIZE);
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, [activeTab, loadCatsBatch]);
+
+  useEffect(() => {
+    if (activeTab !== "all" || isLoading || isLoadingMore) {
+      return;
+    }
+
+    const viewportBottom = window.innerHeight + window.scrollY;
+    const pageBottom = document.documentElement.scrollHeight;
+
+    if (viewportBottom >= pageBottom - LOAD_MORE_OFFSET_PX) {
+      void loadCatsBatch(NEXT_CATS_BATCH_SIZE);
+    }
+  }, [activeTab, allCats.length, isLoading, isLoadingMore, loadCatsBatch]);
 
   return (
     <main className="app">
@@ -165,7 +225,9 @@ export const App = () => {
           </div>
         )}
 
-        {activeTab === "all" && isLoading ? <p className="cats-loading">... загружаем еще котиков ...</p> : null}
+        {activeTab === "all" && (isLoading || isLoadingMore) ? (
+          <p className="cats-loading">... загружаем еще котиков ...</p>
+        ) : null}
       </section>
     </main>
   );
