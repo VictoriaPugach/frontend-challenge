@@ -92,14 +92,15 @@ export const App = () => {
 
     if (isFirstLoad) {
       setIsLoading(true);
-      setLoadError(null);
     } else {
       setIsLoadingMore(true);
     }
+    setLoadError(null);
 
     try {
       const loadedCats = await fetchCats(batchSize);
       const mappedCats = loadedCats.map((cat) => ({ id: cat.id, imageUrl: cat.url }));
+      setLoadError(null);
 
       setAllCats((currentCats) => {
         if (mappedCats.length === 0) {
@@ -197,6 +198,11 @@ export const App = () => {
             .filter((cat): cat is CatItem => Boolean(cat)),
     [activeTab, allCats, favoriteIds, favoriteCatsById]
   );
+
+  const isAllTabErrorState = activeTab === "all" && !isLoading && allCats.length === 0 && Boolean(loadError);
+  const isAllTabLoadMoreErrorState = activeTab === "all" && allCats.length > 0 && Boolean(loadError);
+  const isFavoritesEmptyState = activeTab === "favorites" && catsToRender.length === 0;
+  const isAllTabEmptyState = activeTab === "all" && !isLoading && !loadError && catsToRender.length === 0;
 
   useEffect(() => {
     if (activeTab !== "all") {
@@ -308,13 +314,26 @@ export const App = () => {
         ) : (
           <div className="empty-state">
             <h2 className="empty-state__title">
-              {loadError ? "Не удалось загрузить котиков" : "Пока здесь пусто"}
+              {isAllTabErrorState ? "Не удалось загрузить котиков" : "Пока здесь пусто"}
             </h2>
             <p className="empty-state__text">
-              {activeTab === "favorites"
+              {isAllTabErrorState
+                ? loadError
+                : isFavoritesEmptyState
                 ? "Добавь котиков в избранное на вкладке \"Все котики\"."
-                : loadError ?? "Карточки появятся после загрузки."}
+                : isAllTabEmptyState
+                  ? "Карточки появятся после загрузки."
+                  : "Пока здесь пусто."}
             </p>
+            {isAllTabErrorState ? (
+              <button
+                className="empty-state__retry-button"
+                type="button"
+                onClick={() => void loadCatsBatch(INITIAL_CATS_BATCH_SIZE, true)}
+              >
+                Повторить
+              </button>
+            ) : null}
           </div>
         )}
 
@@ -328,6 +347,19 @@ export const App = () => {
 
         {activeTab === "all" && (isLoading || isLoadingMore) ? (
           <p className="cats-loading">... загружаем еще котиков ...</p>
+        ) : null}
+
+        {isAllTabLoadMoreErrorState ? (
+          <div className="cats-inline-error" role="status" aria-live="polite">
+            <span className="cats-inline-error__text">{loadError}</span>
+            <button
+              className="cats-inline-error__retry-button"
+              type="button"
+              onClick={() => void loadCatsBatch(NEXT_CATS_BATCH_SIZE)}
+            >
+              Повторить
+            </button>
+          </div>
         ) : null}
       </section>
     </main>
