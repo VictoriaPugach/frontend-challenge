@@ -95,13 +95,6 @@ body,
   }
 }
 
-.cat-card:focus-within {
-  transform: scale(1.14);
-  transform-origin: center;
-  box-shadow: 0 9px 18px rgba(0, 0, 0, 0.18), 0 6px 5px rgba(0, 0, 0, 0.24);
-  z-index: 1;
-}
-
 .cat-card__placeholder {
   display: flex;
   align-items: center;

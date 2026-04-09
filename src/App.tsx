@@ -1,31 +1,61 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type CatItem = {
   id: string;
   label: string;
-  isFavorite: boolean;
 };
 
-const allCats: CatItem[] = [
-  { id: "1", label: "Карточка 1", isFavorite: false },
-  { id: "2", label: "Карточка 2", isFavorite: true },
-  { id: "3", label: "Карточка 3", isFavorite: false }
-];
+const FAVORITES_STORAGE_KEY = "favorite-cat-ids";
 
-const favoriteCats: CatItem[] = [
-  { id: "4", label: "Любимая 1", isFavorite: true },
-  { id: "5", label: "Любимая 2", isFavorite: true },
-  { id: "6", label: "Любимая 3", isFavorite: true }
+const allCats: CatItem[] = [
+  { id: "1", label: "Карточка 1" },
+  { id: "2", label: "Карточка 2" },
+  { id: "3", label: "Карточка 3" }
 ];
 
 type TabKey = "all" | "favorites";
 
+const readFavoriteIds = (): string[] => {
+  const rawValue = localStorage.getItem(FAVORITES_STORAGE_KEY);
+
+  if (!rawValue) {
+    return [];
+  }
+
+  try {
+    const parsedValue: unknown = JSON.parse(rawValue);
+
+    if (Array.isArray(parsedValue)) {
+      return parsedValue.filter((id): id is string => typeof id === "string");
+    }
+  } catch {
+    return [];
+  }
+
+  return [];
+};
+
 export const App = () => {
   const [activeTab, setActiveTab] = useState<TabKey>("all");
+  const [favoriteIds, setFavoriteIds] = useState<string[]>(readFavoriteIds);
+  const favoriteIdsSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
+
+  useEffect(() => {
+    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favoriteIds));
+  }, [favoriteIds]);
+
+  const toggleFavorite = (catId: string) => {
+    setFavoriteIds((currentIds) =>
+      currentIds.includes(catId) ? currentIds.filter((id) => id !== catId) : [...currentIds, catId]
+    );
+  };
 
   const catsToRender = useMemo(
-    () => (activeTab === "all" ? allCats : favoriteCats),
-    [activeTab]
+    () =>
+      activeTab === "all"
+        ? allCats
+        : allCats.filter((cat) => favoriteIdsSet.has(cat.id)),
+    [activeTab, favoriteIdsSet]
   );
 
   return (
@@ -60,9 +90,12 @@ export const App = () => {
                 <div className="cat-card__placeholder">{cat.label}</div>
 
                 <button
-                  className={`cat-card__favorite ${cat.isFavorite ? "cat-card__favorite--active" : ""}`}
+                  className={`cat-card__favorite ${favoriteIdsSet.has(cat.id) ? "cat-card__favorite--active" : ""}`}
                   type="button"
-                  aria-label={cat.isFavorite ? "Убрать из избранного" : "Добавить в избранное"}
+                  aria-label={
+                    favoriteIdsSet.has(cat.id) ? "Убрать из избранного" : "Добавить в избранное"
+                  }
+                  onClick={() => toggleFavorite(cat.id)}
                 >
                   <svg
                     className="cat-card__heart cat-card__heart--outline"
