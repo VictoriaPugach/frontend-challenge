@@ -1,17 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { fetchCats } from "./api/cats";
 
 type CatItem = {
   id: string;
-  label: string;
+  imageUrl: string;
 };
 
 const FAVORITES_STORAGE_KEY = "favorite-cat-ids";
-
-const allCats: CatItem[] = [
-  { id: "1", label: "Карточка 1" },
-  { id: "2", label: "Карточка 2" },
-  { id: "3", label: "Карточка 3" }
-];
 
 type TabKey = "all" | "favorites";
 
@@ -37,8 +32,41 @@ const readFavoriteIds = (): string[] => {
 
 export const App = () => {
   const [activeTab, setActiveTab] = useState<TabKey>("all");
+  const [allCats, setAllCats] = useState<CatItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<string[]>(readFavoriteIds);
   const favoriteIdsSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
+
+  useEffect(() => {
+    const abortController = new AbortController();
+
+    const loadCats = async () => {
+      setIsLoading(true);
+      setLoadError(null);
+
+      try {
+        const loadedCats = await fetchCats(15, abortController.signal);
+        setAllCats(loadedCats.map((cat) => ({ id: cat.id, imageUrl: cat.url })));
+      } catch (error) {
+        if (abortController.signal.aborted) {
+          return;
+        }
+
+        setLoadError(error instanceof Error ? error.message : "Ошибка загрузки");
+      } finally {
+        if (!abortController.signal.aborted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void loadCats();
+
+    return () => {
+      abortController.abort();
+    };
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favoriteIds));
@@ -55,7 +83,7 @@ export const App = () => {
       activeTab === "all"
         ? allCats
         : allCats.filter((cat) => favoriteIdsSet.has(cat.id)),
-    [activeTab, favoriteIdsSet]
+    [activeTab, allCats, favoriteIdsSet]
   );
 
   return (
@@ -87,7 +115,7 @@ export const App = () => {
           <section className="cats-grid" aria-label="Сетка с карточками котиков">
             {catsToRender.map((cat) => (
               <article className="cat-card" key={cat.id}>
-                <div className="cat-card__placeholder">{cat.label}</div>
+                <img className="cat-card__image" src={cat.imageUrl} alt="Котик" loading="lazy" />
 
                 <button
                   className={`cat-card__favorite ${favoriteIdsSet.has(cat.id) ? "cat-card__favorite--active" : ""}`}
@@ -126,12 +154,18 @@ export const App = () => {
           </section>
         ) : (
           <div className="empty-state">
-            <h2 className="empty-state__title">Пока здесь пусто</h2>
-            <p className="empty-state__text">Карточки появятся после добавления котиков.</p>
+            <h2 className="empty-state__title">
+              {loadError ? "Не удалось загрузить котиков" : "Пока здесь пусто"}
+            </h2>
+            <p className="empty-state__text">
+              {activeTab === "favorites"
+                ? "Добавь котиков в избранное на вкладке \"Все котики\"."
+                : loadError ?? "Карточки появятся после загрузки."}
+            </p>
           </div>
         )}
 
-        {activeTab === "all" ? <p className="cats-loading">... загружаем еще котиков ...</p> : null}
+        {activeTab === "all" && isLoading ? <p className="cats-loading">... загружаем еще котиков ...</p> : null}
       </section>
     </main>
   );
