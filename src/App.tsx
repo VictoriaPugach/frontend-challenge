@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchCats } from "./api/cats";
 
 type CatItem = {
@@ -7,6 +7,11 @@ type CatItem = {
 };
 
 const FAVORITES_STORAGE_KEY = "favorite-cat-ids";
+const FAVORITE_CATS_STORAGE_KEY = "favorite-cats-by-id";
+const INITIAL_CATS_BATCH_SIZE = 10;
+const NEXT_CATS_BATCH_SIZE = 10;
+const LOAD_MORE_OFFSET_PX = 480;
+const SKELETON_ITEMS_COUNT = 10;
 
 type TabKey = "all" | "favorites";
 
@@ -30,61 +35,203 @@ const readFavoriteIds = (): string[] => {
   return [];
 };
 
+const readFavoriteCatsById = (): Record<string, CatItem> => {
+  const rawValue = localStorage.getItem(FAVORITE_CATS_STORAGE_KEY);
+
+  if (!rawValue) {
+    return {};
+  }
+
+  try {
+    const parsedValue: unknown = JSON.parse(rawValue);
+
+    if (!parsedValue || typeof parsedValue !== "object") {
+      return {};
+    }
+
+    const entries = Object.entries(parsedValue);
+    const result: Record<string, CatItem> = {};
+
+    for (const [id, value] of entries) {
+      if (!value || typeof value !== "object") {
+        continue;
+      }
+
+      const imageUrl = "imageUrl" in value ? value.imageUrl : null;
+
+      if (typeof imageUrl === "string") {
+        result[id] = { id, imageUrl };
+      }
+    }
+
+    return result;
+  } catch {
+    return {};
+  }
+};
+
 export const App = () => {
   const [activeTab, setActiveTab] = useState<TabKey>("all");
   const [allCats, setAllCats] = useState<CatItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [favoriteIds, setFavoriteIds] = useState<string[]>(readFavoriteIds);
+  const [favoriteCatsById, setFavoriteCatsById] = useState<Record<string, CatItem>>(
+    readFavoriteCatsById
+  );
   const favoriteIdsSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
+  const isRequestInFlightRef = useRef(false);
 
-  useEffect(() => {
-    const abortController = new AbortController();
+  const loadCatsBatch = useCallback(async (batchSize: number, isFirstLoad = false) => {
+    if (isRequestInFlightRef.current) {
+      return;
+    }
 
-    const loadCats = async () => {
+    isRequestInFlightRef.current = true;
+
+    if (isFirstLoad) {
       setIsLoading(true);
       setLoadError(null);
+    } else {
+      setIsLoadingMore(true);
+    }
 
-      try {
-        const loadedCats = await fetchCats(15, abortController.signal);
-        setAllCats(loadedCats.map((cat) => ({ id: cat.id, imageUrl: cat.url })));
-      } catch (error) {
-        if (abortController.signal.aborted) {
-          return;
+    try {
+      const loadedCats = await fetchCats(batchSize);
+      const mappedCats = loadedCats.map((cat) => ({ id: cat.id, imageUrl: cat.url }));
+
+      setAllCats((currentCats) => {
+        if (mappedCats.length === 0) {
+          return currentCats;
         }
 
-        setLoadError(error instanceof Error ? error.message : "Ошибка загрузки");
-      } finally {
-        if (!abortController.signal.aborted) {
-          setIsLoading(false);
-        }
+        const existingIds = new Set(currentCats.map((cat) => cat.id));
+        const uniqueIncoming = mappedCats.filter((cat) => !existingIds.has(cat.id));
+
+        return uniqueIncoming.length > 0 ? [...currentCats, ...uniqueIncoming] : currentCats;
+      });
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Ошибка загрузки");
+    } finally {
+      if (isFirstLoad) {
+        setIsLoading(false);
+      } else {
+        setIsLoadingMore(false);
       }
-    };
 
-    void loadCats();
-
-    return () => {
-      abortController.abort();
-    };
+      isRequestInFlightRef.current = false;
+    }
   }, []);
+
+  useEffect(() => {
+    const startLoading = async () => {
+      await loadCatsBatch(INITIAL_CATS_BATCH_SIZE, true);
+      void loadCatsBatch(NEXT_CATS_BATCH_SIZE);
+    };
+
+    void startLoading();
+  }, [loadCatsBatch]);
 
   useEffect(() => {
     localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favoriteIds));
   }, [favoriteIds]);
 
-  const toggleFavorite = (catId: string) => {
-    setFavoriteIds((currentIds) =>
-      currentIds.includes(catId) ? currentIds.filter((id) => id !== catId) : [...currentIds, catId]
-    );
+  useEffect(() => {
+    localStorage.setItem(FAVORITE_CATS_STORAGE_KEY, JSON.stringify(favoriteCatsById));
+  }, [favoriteCatsById]);
+
+  const toggleFavorite = (cat: CatItem) => {
+    const catId = cat.id;
+    const isActive = favoriteIdsSet.has(catId);
+
+    if (isActive) {
+      setFavoriteIds((currentIds) => currentIds.filter((id) => id !== catId));
+      setFavoriteCatsById((currentItems) => {
+        const nextItems = { ...currentItems };
+        delete nextItems[catId];
+        return nextItems;
+      });
+      return;
+    }
+
+    setFavoriteIds((currentIds) => [...currentIds, catId]);
+    setFavoriteCatsById((currentItems) => ({
+      ...currentItems,
+      [catId]: cat
+    }));
   };
+
+  useEffect(() => {
+    if (allCats.length === 0 || favoriteIds.length === 0) {
+      return;
+    }
+
+    setFavoriteCatsById((currentItems) => {
+      const nextItems = { ...currentItems };
+      let hasUpdates = false;
+
+      for (const cat of allCats) {
+        if (!favoriteIdsSet.has(cat.id)) {
+          continue;
+        }
+
+        const savedItem = nextItems[cat.id];
+
+        if (!savedItem || savedItem.imageUrl !== cat.imageUrl) {
+          nextItems[cat.id] = cat;
+          hasUpdates = true;
+        }
+      }
+
+      return hasUpdates ? nextItems : currentItems;
+    });
+  }, [allCats, favoriteIds, favoriteIdsSet]);
 
   const catsToRender = useMemo(
     () =>
       activeTab === "all"
         ? allCats
-        : allCats.filter((cat) => favoriteIdsSet.has(cat.id)),
-    [activeTab, allCats, favoriteIdsSet]
+        : favoriteIds
+            .map((favoriteId) => favoriteCatsById[favoriteId])
+            .filter((cat): cat is CatItem => Boolean(cat)),
+    [activeTab, allCats, favoriteIds, favoriteCatsById]
   );
+
+  useEffect(() => {
+    if (activeTab !== "all") {
+      return;
+    }
+
+    const handleScroll = () => {
+      const viewportBottom = window.innerHeight + window.scrollY;
+      const pageBottom = document.documentElement.scrollHeight;
+      const isNearBottom = viewportBottom >= pageBottom - LOAD_MORE_OFFSET_PX;
+
+      if (isNearBottom) {
+        void loadCatsBatch(NEXT_CATS_BATCH_SIZE);
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, [activeTab, loadCatsBatch]);
+
+  useEffect(() => {
+    if (activeTab !== "all" || isLoading || isLoadingMore) {
+      return;
+    }
+
+    const viewportBottom = window.innerHeight + window.scrollY;
+    const pageBottom = document.documentElement.scrollHeight;
+
+    if (viewportBottom >= pageBottom - LOAD_MORE_OFFSET_PX) {
+      void loadCatsBatch(NEXT_CATS_BATCH_SIZE);
+    }
+  }, [activeTab, allCats.length, isLoading, isLoadingMore, loadCatsBatch]);
 
   return (
     <main className="app">
@@ -111,7 +258,13 @@ export const App = () => {
         className={`cats-screen ${activeTab === "all" ? "cats-screen--all" : "cats-screen--favorites"}`}
         aria-label="Экран со списком котиков"
       >
-        {catsToRender.length > 0 ? (
+        {activeTab === "all" && isLoading && catsToRender.length === 0 ? (
+          <section className="cats-grid cats-grid--skeleton" aria-label="Загрузка карточек">
+            {Array.from({ length: SKELETON_ITEMS_COUNT }).map((_, index) => (
+              <div className="cat-card-skeleton" key={`skeleton-${index}`} aria-hidden="true" />
+            ))}
+          </section>
+        ) : catsToRender.length > 0 ? (
           <section className="cats-grid" aria-label="Сетка с карточками котиков">
             {catsToRender.map((cat) => (
               <article className="cat-card" key={cat.id}>
@@ -123,7 +276,7 @@ export const App = () => {
                   aria-label={
                     favoriteIdsSet.has(cat.id) ? "Убрать из избранного" : "Добавить в избранное"
                   }
-                  onClick={() => toggleFavorite(cat.id)}
+                  onClick={() => toggleFavorite(cat)}
                 >
                   <svg
                     className="cat-card__heart cat-card__heart--outline"
@@ -165,7 +318,17 @@ export const App = () => {
           </div>
         )}
 
-        {activeTab === "all" && isLoading ? <p className="cats-loading">... загружаем еще котиков ...</p> : null}
+        {activeTab === "all" && isLoadingMore && catsToRender.length > 0 ? (
+          <section className="cats-grid cats-grid--skeleton cats-grid--skeleton-more" aria-hidden="true">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div className="cat-card-skeleton" key={`skeleton-more-${index}`} />
+            ))}
+          </section>
+        ) : null}
+
+        {activeTab === "all" && (isLoading || isLoadingMore) ? (
+          <p className="cats-loading">... загружаем еще котиков ...</p>
+        ) : null}
       </section>
     </main>
   );
