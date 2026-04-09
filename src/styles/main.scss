@@ -1,0 +1,228 @@
+@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@400&display=swap");
+
+:root {
+  font-family: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #212121;
+  background-color: #f3f3f3;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+}
+
+.app {
+  min-height: 100vh;
+  background-color: #f3f3f3;
+}
+
+.app-header {
+  height: 64px;
+  background-color: #42a5f5;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+.cats-screen {
+  width: min(1317px, calc(100% - 124px));
+  margin: 48px auto 0;
+}
+
+.cats-tabs {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  width: min(1317px, calc(100% - 124px));
+  margin: 0 auto;
+}
+
+.cats-tabs__item {
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  padding: 0 22px;
+  height: 100%;
+  min-width: 120px;
+  text-align: center;
+  white-space: nowrap;
+  font-size: 14px;
+  line-height: 21px;
+  letter-spacing: 0.25px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.cats-tabs__item:last-child {
+  min-width: 173px;
+}
+
+.cats-tabs__item--active {
+  background-color: rgba(0, 0, 0, 0.12);
+  color: #ffffff;
+}
+
+.cats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 225px);
+  gap: 48px;
+  justify-content: start;
+  align-items: start;
+}
+
+.cat-card {
+  position: relative;
+  width: 225px;
+  height: 225px;
+  background-color: #e8e8e8;
+  overflow: hidden;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cat-card:hover {
+    transform: scale(1.14);
+    transform-origin: center;
+    box-shadow: 0 9px 18px rgba(0, 0, 0, 0.18), 0 6px 5px rgba(0, 0, 0, 0.24);
+    z-index: 1;
+  }
+}
+
+.cat-card:focus-within {
+  transform: scale(1.14);
+  transform-origin: center;
+  box-shadow: 0 9px 18px rgba(0, 0, 0, 0.18), 0 6px 5px rgba(0, 0, 0, 0.24);
+  z-index: 1;
+}
+
+.cat-card__placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: #6a6a6a;
+  font-size: 16px;
+  background: linear-gradient(145deg, #efefef, #dbdbdb);
+}
+
+.cat-card__favorite {
+  position: absolute;
+  right: 14px;
+  bottom: 12px;
+  width: 40px;
+  height: 37px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+
+.cat-card__heart {
+  position: absolute;
+  inset: 0;
+  width: 40px;
+  height: 37px;
+}
+
+.cat-card__heart path {
+  fill: #f24e1e;
+}
+
+.cat-card__heart--filled {
+  opacity: 0;
+}
+
+.cat-card__favorite--active .cat-card__heart--outline {
+  opacity: 0;
+}
+
+.cat-card__favorite--active .cat-card__heart--filled {
+  opacity: 1;
+}
+
+.cats-screen--all .cat-card__favorite:not(.cat-card__favorite--active) {
+  opacity: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cats-screen--all .cat-card:hover .cat-card__favorite:not(.cat-card__favorite--active) {
+    opacity: 1;
+  }
+}
+
+.empty-state {
+  margin-top: 14px;
+  padding: 18px 20px;
+  background-color: #ffffff;
+}
+
+.empty-state__title {
+  margin: 0;
+  font-size: 22px;
+}
+
+.empty-state__text {
+  margin: 8px 0 0;
+  color: #666666;
+}
+
+.cats-loading {
+  margin: 48px 0 0;
+  text-align: center;
+  color: #000000;
+  font-size: 14px;
+  line-height: 21px;
+  letter-spacing: 0.25px;
+}
+
+@media (max-width: 1024px) {
+  .cats-tabs,
+  .cats-screen {
+    width: calc(100% - 40px);
+  }
+
+  .cats-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 24px;
+  }
+
+  .cat-card {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1 / 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .cats-tabs,
+  .cats-screen {
+    width: calc(100% - 24px);
+  }
+
+  .cats-screen {
+    margin-top: 20px;
+  }
+
+  .cats-tabs__item {
+    min-width: 0;
+    flex: 1 1 auto;
+    padding: 0 10px;
+    font-size: 13px;
+    line-height: 18px;
+  }
+
+  .cats-tabs__item:last-child {
+    min-width: 0;
+  }
+}
